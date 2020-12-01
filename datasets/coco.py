@@ -12,28 +12,9 @@ from pycocotools.cocoeval import COCOeval
 from utils.image import get_border, get_affine_transform, affine_transform, color_aug
 from utils.image import draw_umich_gaussian, gaussian_radius
 
-COCO_NAMES = ['__background__', 'person', 'bicycle', 'car', 'motorcycle', 'airplane',
-              'bus', 'train', 'truck', 'boat', 'traffic light', 'fire hydrant',
-              'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse',
-              'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe', 'backpack',
-              'umbrella', 'handbag', 'tie', 'suitcase', 'frisbee', 'skis',
-              'snowboard', 'sports ball', 'kite', 'baseball bat', 'baseball glove',
-              'skateboard', 'surfboard', 'tennis racket', 'bottle', 'wine glass',
-              'cup', 'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple', 'sandwich',
-              'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake',
-              'chair', 'couch', 'potted plant', 'bed', 'dining table', 'toilet', 'tv',
-              'laptop', 'mouse', 'remote', 'keyboard', 'cell phone', 'microwave',
-              'oven', 'toaster', 'sink', 'refrigerator', 'book', 'clock', 'vase',
-              'scissors', 'teddy bear', 'hair drier', 'toothbrush']
+COCO_NAMES = ['__background__', 'defect']
 
-COCO_IDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13,
-            14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
-            24, 25, 27, 28, 31, 32, 33, 34, 35, 36,
-            37, 38, 39, 40, 41, 42, 43, 44, 46, 47,
-            48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
-            58, 59, 60, 61, 62, 63, 64, 65, 67, 70,
-            72, 73, 74, 75, 76, 77, 78, 79, 80, 81,
-            82, 84, 85, 86, 87, 88, 89, 90]
+COCO_IDS = [1]
 
 COCO_MEAN = [0.40789654, 0.44719302, 0.47026115]
 COCO_STD = [0.28863828, 0.27408164, 0.27809835]
@@ -46,10 +27,13 @@ COCO_EIGEN_VECTORS = [[-0.58752847, -0.69563484, 0.41340352],
 class COCO(data.Dataset):
   def __init__(self, data_dir, split, split_ratio=1.0, img_size=512):
     super(COCO, self).__init__()
-    self.num_classes = 80
+    self.num_classes = 2
     self.class_name = COCO_NAMES
-    self.valid_ids = COCO_IDS
+    self.valid_ids = np.arange(1, self.num_classes+1, dtype=np.int32)
+    print("Valid ids:  --------- ", self.valid_ids)
     self.cat_ids = {v: i for i, v in enumerate(self.valid_ids)}
+
+    print("Category ids", self.cat_ids)
 
     self.data_rng = np.random.RandomState(123)
     self.eig_val = np.array(COCO_EIGEN_VALUES, dtype=np.float32)
@@ -58,12 +42,17 @@ class COCO(data.Dataset):
     self.std = np.array(COCO_STD, dtype=np.float32)[None, None, :]
 
     self.split = split
-    self.data_dir = os.path.join(data_dir, 'coco')
-    self.img_dir = os.path.join(self.data_dir, '%s2017' % split)
-    if split == 'test':
-      self.annot_path = os.path.join(self.data_dir, 'annotations', 'image_info_test-dev2017.json')
-    else:
-      self.annot_path = os.path.join(self.data_dir, 'annotations', 'instances_%s2017.json' % split)
+    # self.data_dir = os.path.join(data_dir, 'coco')
+    # self.img_dir = os.path.join(self.data_dir, '%s2017' % split)
+    # if split == 'test':
+    #   self.annot_path = os.path.join(self.data_dir, 'annotations', 'image_info_test-dev2017.json')
+    # else:
+    #   self.annot_path = os.path.join(self.data_dir, 'annotations', 'instances_%s2017.json' % split)
+    
+    self.data_dir = os.path.join(data_dir, 'voc')
+    self.img_dir = os.path.join(self.data_dir, 'imagez')
+    _ann_name = {'train': 'trainval0712', 'val': 'test2007'}
+    self.annot_path = os.path.join(self.data_dir, 'annotations', 'pascal_%s.json' % _ann_name[split])
 
     self.max_objs = 128
     self.padding = 127  # 31 for resnet/resdcn
@@ -88,6 +77,7 @@ class COCO(data.Dataset):
   def __getitem__(self, index):
     img_id = self.images[index]
     img_path = os.path.join(self.img_dir, self.coco.loadImgs(ids=[img_id])[0]['file_name'])
+    # print("image path: ----- ", img_path)
     ann_ids = self.coco.getAnnIds(imgIds=[img_id])
     annotations = self.coco.loadAnns(ids=ann_ids)
     labels = np.array([self.cat_ids[anno['category_id']] for anno in annotations])

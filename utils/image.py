@@ -1,6 +1,10 @@
 import numpy as np
 import cv2
 import random
+import torch
+
+TEXT_COLOR = (52, 206, 255)
+ID_OFFSET = 10
 
 
 def flip(img):
@@ -237,3 +241,70 @@ def color_aug(data_rng, image, eig_val, eig_vec):
   for f in functions:
     f(data_rng, image, gs, gs_mean, 0.4)
   lighting_(data_rng, image, 0.1, eig_val, eig_vec)
+
+
+def preprocess_image(image_path, test_scales=1, img_size=None, arch='resdcn', dataset='coco', dataset_mean=None, dataset_std=None, test_flip=False):
+    image = cv2.imread(image_path)
+    # orig_image = image
+
+    height, width = image.shape[0:2]
+    padding = 127 if 'hourglass' in arch else 31
+
+    imgs = {}
+
+    for scale in test_scales:
+      new_height = int(height * scale)
+      new_width = int(width * scale)
+
+      if img_size > 0:
+        img_height, img_width = img_size, img_size
+        center = np.array([new_width / 2., new_height / 2.], dtype=np.float32)
+        scaled_size = max(height, width) * 1.0
+        scaled_size = np.array([scaled_size, scaled_size], dtype=np.float32)
+      else:
+        img_height = (new_height | padding) + 1
+        img_width = (new_width | padding) + 1
+        center = np.array([new_width // 2, new_height // 2], dtype=np.float32)
+        scaled_size = np.array([img_width, img_height], dtype=np.float32)
+
+      img = cv2.resize(image, (new_width, new_height))
+      trans_img = get_affine_transform(center, scaled_size, 0, [img_width, img_height])
+      img = cv2.warpAffine(img, trans_img, (img_width, img_height))
+
+      img = img.astype(np.float32) / 255.
+      img -= np.array(dataset_mean, dtype=np.float32)[None, None, :]
+      img /= np.array(dataset_std, dtype=np.float32)[None, None, :]
+      img = img.transpose(2, 0, 1)[None, :, :, :]  # from [H, W, C] to [1, C, H, W]
+
+      if test_flip:
+        img = np.concatenate((img, img[:, :, :, ::-1].copy()), axis=0)
+
+      imgs[scale] = {'image': torch.from_numpy(img).float(),
+              'center': np.array(center),
+              'scale': np.array(scaled_size),
+              'fmap_h': np.array(img_height // 4),
+              'fmap_w': np.array(img_width // 4)}
+
+    return imgs
+
+
+def draw_bbox_with_id(image, bbox, obj_class="", idx=None):
+    """ Draws bbox on image from bounding box data 
+
+    Arguments:
+        image {unint8} -- Numpy array
+        bbox {float} -- List of floating point values: top left, bottom right x & y. 
+        obj_class {str} -- Name of object class
+        id {int} -- Object id - zero indexed
+    """
+    text = str(obj_class)
+    if idx is not None:
+        text += str(idx)
+
+    top_left = (int(bbox[0]), int(bbox[1]))
+    bottom_right = (int(bbox[2]), int(bbox[3]))
+
+    image = cv2.rectangle(image, top_left, bottom_right, (255, 153, 51), 2, 1)
+    text_pos = (int(bbox[0]) - ID_OFFSET, int(bbox[1]) - ID_OFFSET)
+
+    cv2.putText(image, text, text_pos, cv2.FONT_HERSHEY_PLAIN, 2, TEXT_COLOR, 2)
